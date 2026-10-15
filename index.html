@@ -10,7 +10,6 @@
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif; background: #0f172a; }
     #map { width: 100%; height: 100%; cursor: crosshair; }
 
-    /* 左上コントロールパネル（折りたたみ対応） */
     .control-panel {
       position: absolute;
       top: 12px;
@@ -58,7 +57,6 @@
     .panel-body.collapsed {
       display: none;
     }
-
     .btn-gps {
       width: 100%;
       padding: 11px;
@@ -76,8 +74,6 @@
       gap: 6px;
       box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
     }
-    .btn-gps:active { transform: translateY(1px); }
-
     .style-switcher {
       display: flex;
       gap: 6px;
@@ -99,7 +95,6 @@
       color: #0f172a;
       border-color: #38bdf8;
     }
-
     .status-text {
       font-size: 12px;
       color: #e2e8f0;
@@ -127,7 +122,6 @@
     .b-2 { background: #f59e0b; }
     .b-1 { background: #10b981; }
 
-    /* ポップアップ表示調整（スマホでも見やすく・右端切れ完全防止） */
     .maplibregl-popup {
       max-width: 330px !important;
       z-index: 30;
@@ -182,19 +176,6 @@
       width: 62%;
       color: #0f172a;
     }
-    .xroad-link {
-      display: block;
-      margin-top: 8px;
-      text-align: center;
-      background: #f1f5f9;
-      color: #0284c7;
-      text-decoration: none;
-      font-size: 11px;
-      font-weight: bold;
-      padding: 6px;
-      border-radius: 6px;
-      border: 1px solid #cbd5e1;
-    }
   </style>
 </head>
 <body>
@@ -236,37 +217,13 @@
   const WORKER_ENDPOINT = "https://tight-block-116a.morimite2001.workers.dev/";
   const SEARCH_RADIUS = 1500.0;
 
-  // 国交省DPFの英語キーを日本語に翻訳する辞書（実際のRSDB/DPF仕様準拠）
   const KNOWN_LABELS = {
-    "DPF:title": "名称",
-    "DPF:route_name": "路線名",
-    "DPF:organization_name": "管理組織",
-    "DPF:Updated_organization_name": "データ更新組織",
-    "DPF:address": "所在地",
-    "DPF:erection_datetime": "架設年月日",
-    "DPF:year": "データ年度",
-    "DPF:latitude": "緯度",
-    "DPF:longitude": "経度",
-    "DPF:catalogo_title": "カタログ名",
-    "DPF:dataset_name": "データセット名",
-    "RSDB:shisetsu_mei": "施設名",
-    "RSDB:shisetsu_mei_kana": "施設名カナ",
-    "RSDB:rosen_mei": "路線名",
-    "RSDB:kanrisha_mei": "管理者名",
-    "RSDB:kanrisha_code": "管理者コード",
-    "RSDB:todoufuken_code": "都道府県コード",
-    "RSDB:shisetsu_kubun": "施設区分",
-    "RSDB:kasetsu_nen": "架設年",
-    "RSDB:kyoucho": "橋長(m)",
-    "RSDB:enchou": "延長(m)",
-    "RSDB:fukuin": "幅員(m)",
-    "RSDB:tenken_nendo": "点検年度",
-    "RSDB:kiroku_nendo": "点検記録年度",
-    "RSDB:kiroku_hantei_kubun": "健全性判定区分",
-    "RSDB:hantei_kubun": "健全性判定区分",
-    "RSDB:zenkoku_hantei": "健全性判定区分",
-    "RSDB:shuzen_sochi_joukyou": "修繕措置状況",
-    "RSDB:koushin_nichiji": "DB更新日時"
+    "DPF:title": "名称", "DPF:route_name": "路線名", "DPF:organization_name": "管理組織",
+    "DPF:address": "所在地", "DPF:erection_datetime": "架設年月日", "DPF:year": "データ年度",
+    "RSDB:shisetsu_mei": "施設名", "RSDB:rosen_mei": "路線名", "RSDB:kanrisha_mei": "管理者名",
+    "RSDB:kasetsu_nen": "架設年", "RSDB:kyoucho": "橋長(m)", "RSDB:enchou": "延長(m)",
+    "RSDB:fukuin": "幅員(m)", "RSDB:tenken_nendo": "点検年度", "RSDB:kiroku_hantei_kubun": "健全性判定区分",
+    "RSDB:hantei_kubun": "健全性判定区分", "RSDB:zenkoku_hantei": "健全性判定区分"
   };
 
   const map = new maplibregl.Map({
@@ -284,7 +241,6 @@
   let bridgeMarkers = [];
   let centerMarker = null;
 
-  // パネルの折りたたみ切り替え
   function togglePanel() {
     const body = document.getElementById('panel-body');
     const btn = document.getElementById('toggle-btn');
@@ -298,38 +254,15 @@
   }
 
   map.on('load', () => {
-    map.addSource('gsi-pale', {
-      type: 'raster',
-      tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '国土地理院'
-    });
+    map.addSource('gsi-pale', { type: 'raster', tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'], tileSize: 256, attribution: '国土地理院' });
     map.addLayer({ id: 'gsi-pale-layer', type: 'raster', source: 'gsi-pale', layout: { visibility: 'none' } });
 
-    map.addSource('gsi-photo', {
-      type: 'raster',
-      tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],
-      tileSize: 256,
-      attribution: '国土地理院'
-    });
+    map.addSource('gsi-photo', { type: 'raster', tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'], tileSize: 256, attribution: '国土地理院' });
     map.addLayer({ id: 'gsi-photo-layer', type: 'raster', source: 'gsi-photo', layout: { visibility: 'none' } });
 
-    map.addSource('search-circle', {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] }
-    });
-    map.addLayer({
-      id: 'search-circle-fill',
-      type: 'fill',
-      source: 'search-circle',
-      paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.12 }
-    });
-    map.addLayer({
-      id: 'search-circle-line',
-      type: 'line',
-      source: 'search-circle',
-      paint: { 'line-color': '#0284c7', 'line-width': 2.5 }
-    });
+    map.addSource('search-circle', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'search-circle-fill', type: 'fill', source: 'search-circle', paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.12 } });
+    map.addLayer({ id: 'search-circle-line', type: 'line', source: 'search-circle', paint: { 'line-color': '#0284c7', 'line-width': 2.5 } });
   });
 
   function switchBaseMap(mode) {
@@ -349,111 +282,79 @@
       const theta = (i / points) * (2 * Math.PI);
       coords.push([centerLon + distanceX * Math.cos(theta), centerLat + distanceY * Math.sin(theta)]);
     }
-    return {
-      type: 'FeatureCollection',
-      features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } }]
-    };
+    return { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } }] };
   }
 
-  function getJudgeStyle(judgeStr) {
-    const s = String(judgeStr || "").trim();
-    if (s === "4" || s.includes("Ⅳ") || s.includes("IV")) return { color: "#7f1d1d", label: "判定Ⅳ (緊急措置段階)" };
-    if (s === "3" || s.includes("Ⅲ") || s.includes("III")) return { color: "#ef4444", label: "判定Ⅲ (早期措置段階)" };
-    if (s === "2" || s.includes("Ⅱ") || s.includes("II")) return { color: "#f59e0b", label: "判定Ⅱ (予防保全段階)" };
-    if (s === "1" || s.includes("Ⅰ") || s.includes("I")) return { color: "#10b981", label: "判定Ⅰ (健全)" };
-    return { color: "#ef4444", label: s && s !== "記録なし" ? `区分: ${s}` : "記録確認中" };
+  function getJudgeStyle(judgeVal) {
+    const s = String(judgeVal || "").trim();
+    if (s === "4" || s.includes("Ⅳ") || s.includes("IV") || s.includes("緊急")) return { color: "#7f1d1d", label: "判定Ⅳ (緊急措置)" };
+    if (s === "3" || s.includes("Ⅲ") || s.includes("III") || s.includes("早期")) return { color: "#ef4444", label: "判定Ⅲ (早期措置)" };
+    if (s === "2" || s.includes("Ⅱ") || s.includes("II") || s.includes("予防")) return { color: "#f59e0b", label: "判定Ⅱ (予防保全)" };
+    if (s === "1" || s.includes("Ⅰ") || s.includes("I") || s.includes("健全")) return { color: "#10b981", label: "判定Ⅰ (健全)" };
+    if (s && s !== "記録なし") return { color: "#3b82f6", label: `区分: ${s}` };
+    return { color: "#94a3b8", label: "記録確認中" };
   }
 
-  // 国交省DPF・RSDBの実際のキー構造に合わせて正確に抽出
+  // あらゆるキーのゆらぎを完全にキャッチする抽出エンジン
   function getMetaInfo(meta) {
     if (!meta || typeof meta !== 'object') {
-      return { road: "記録なし", admin: "記録なし", year: "記録なし", length: "-", width: "-", inspect: "記録なし", judge: "記録なし", address: "記録なし" };
+      return { road: "記録なし", admin: "記録なし", year: "記録なし", length: "記録なし", width: "記録なし", inspect: "記録なし", judge: "記録なし", address: "記録なし" };
     }
 
-    const pick = (exactKeys, partialWords, excludeKeys = []) => {
-      for (const ek of exactKeys) {
-        if (meta[ek] !== undefined && meta[ek] !== null && meta[ek] !== "") return String(meta[ek]);
-      }
+    const pick = (keywords, excludeWords = []) => {
       for (const [k, v] of Object.entries(meta)) {
         if (v === null || v === "" || typeof v === "object") continue;
-        if (excludeKeys.includes(k)) continue;
         const kl = k.toLowerCase();
-        for (const w of partialWords) {
-          if (kl.includes(w.toLowerCase())) return String(v);
+        const skip = excludeWords.some(ew => kl.includes(ew.toLowerCase()));
+        if (skip) continue;
+        for (const kw of keywords) {
+          if (kl.includes(kw.toLowerCase())) return String(v);
         }
       }
       return "記録なし";
     };
 
-    // 1. 架設年の取得（DPF:erection_datetime "1966-04-01T..." を最優先し、DPF:year は除外）
-    let rawErection = pick(
-      ["DPF:erection_datetime", "RSDB:kasetsu_nen", "RSDB:kyouyou_nen"],
-      ["erection", "kasetsu", "架設", "完成", "竣工"],
-      ["DPF:year", "DPF:year_origin", "RSDB:koushin_nichiji", "DPF:last_updated_datetime"]
-    );
-    let formattedYear = rawErection;
-    if (/^\d{4}-\d{2}-\d{2}/.test(rawErection)) {
-      const y = parseInt(rawErection.substring(0, 4), 10);
-      const age = new Date().getFullYear() - y;
-      formattedYear = `${y}年 (築${age}年)`;
-    } else if (/^\d{4}$/.test(rawErection)) {
-      const y = parseInt(rawErection, 10);
-      const age = new Date().getFullYear() - y;
-      formattedYear = `${y}年 (築${age}年)`;
+    // 1. 架設年
+    let rawYear = pick(["kasetsu", "erection", "built", "架設", "竣工", "完成"], ["year_origin", "koushin"]);
+    let formattedYear = rawYear;
+    if (/^\d{4}-\d{2}-\d{2}/.test(rawYear)) {
+      const y = parseInt(rawYear.substring(0, 4), 10);
+      formattedYear = `${y}年 (築${new Date().getFullYear() - y}年)`;
+    } else if (/^\d{4}$/.test(rawYear)) {
+      const y = parseInt(rawYear, 10);
+      formattedYear = `${y}年 (築${new Date().getFullYear() - y}年)`;
     }
 
-    // 2. 点検年度（RSDB:kiroku_nendo や DPF:year、または更新日時から取得）
-    let rawInspect = pick(
-      ["RSDB:tenken_nendo", "RSDB:kiroku_nendo", "DPF:year"],
-      ["tenken", "kiroku_nendo", "点検"],
-      ["DPF:year_origin"]
-    );
-    if (rawInspect !== "記録なし" && /^\d{4}$/.test(rawInspect)) {
-      rawInspect = rawInspect + "年度";
-    }
+    // 2. 健全性判定
+    let judgeVal = pick(["hantei", "zenkoku", "judge", "判定", "健全", "措置"]);
 
-    // 3. 健全性判定区分（RSDB:kiroku_hantei_kubun 等）
-    let rawJudge = pick(
-      ["RSDB:kiroku_hantei_kubun", "RSDB:hantei_kubun", "RSDB:zenkoku_hantei", "RSDB:shuzen_hantei"],
-      ["hantei", "判定", "健全"],
-      ["RSDB:shisetsu_kubun"]
-    );
+    // 3. 橋長
+    let lengthVal = pick(["kyoucho", "bridge_length", "length", "橋長", "延長"]);
 
-    // 4. 橋長・延長と幅員
-    let rawLength = pick(
-      ["RSDB:kyoucho", "RSDB:enchou", "DPF:length", "RSDB:bridge_length"],
-      ["kyoucho", "enchou", "橋長", "延長", "length"],
-      []
-    );
-    let rawWidth = pick(
-      ["RSDB:fukuin", "RSDB:width", "DPF:width", "RSDB:zen_fukuin"],
-      ["fukuin", "幅員", "width"],
-      []
-    );
+    // 4. 幅員
+    let widthVal = pick(["fukuin", "width", "幅員"]);
 
     // 5. 管理者
-    let rawAdmin = pick(
-      ["RSDB:kanrisha_mei", "DPF:organization_name", "DPF:Updated_organization_name", "DPF:admin_name"],
-      ["kanrisha", "organization", "管理", "事務所"],
-      []
-    );
+    let adminVal = pick(["kanrisha", "organization", "admin", "管理", "事務所", "自治体"]);
 
-    // 6. 所在地
-    let rawAddress = pick(
-      ["DPF:address", "RSDB:shozaichi"],
-      ["address", "shozai", "所在", "住所"],
-      []
-    );
+    // 6. 路線名
+    let roadVal = pick(["route_name", "rosen", "路線"]);
+
+    // 7. 点検年度
+    let inspectVal = pick(["tenken", "kiroku_nendo", "点検"]);
+
+    // 8. 所在地
+    let addrVal = pick(["address", "shozai", "所在", "住所"]);
 
     return {
-      road: pick(["DPF:route_name", "RSDB:rosen_mei"], ["route_name", "rosen", "路線"]),
-      admin: rawAdmin,
+      road: roadVal,
+      admin: adminVal,
       year: formattedYear,
-      length: rawLength,
-      width: rawWidth,
-      inspect: rawInspect,
-      judge: rawJudge,
-      address: rawAddress
+      length: lengthVal !== "記録なし" ? `${lengthVal} m` : "記録なし",
+      width: widthVal !== "記録なし" ? `${widthVal} m` : "記録なし",
+      inspect: inspectVal,
+      judge: judgeVal,
+      address: addrVal
     };
   }
 
@@ -555,7 +456,6 @@
 
       status.innerHTML = `✅ 検索ヒット総数: <b>${total}件</b>（周辺 <b>${records.length}橋</b> を描画）<br>丸い点をタップすると点検結果を表示します。`;
 
-      // スマホ画面（横幅600px以下）の場合は検索完了後に自動でパネルを最小化して地図を広く見せる
       if (window.innerWidth <= 600) {
         document.getElementById('panel-body').classList.add('collapsed');
         document.getElementById('toggle-btn').textContent = '＋ 開く';
@@ -577,7 +477,6 @@
         el.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
         el.style.cursor = 'pointer';
 
-        // 全登録項目テーブル（日本語ラベル付きで見やすく整形）
         let allMetaRows = "";
         for (const [k, v] of Object.entries(meta)) {
           if (v !== null && v !== "" && typeof v !== "object") {
@@ -588,10 +487,6 @@
           }
         }
 
-        // 橋長・幅員の表示整形
-        const lenStr = info.length !== "記録なし" ? `${info.length} m` : "記録なし";
-        const widStr = info.width !== "記録なし" ? `${info.width} m` : "記録なし";
-
         const popupHtml = `
           <div>
             <div class="popup-title" style="border-color:${style.color};">
@@ -600,11 +495,11 @@
             <table class="popup-table">
               <tr><th>健全性判定</th><td><b style="color:${style.color};">${style.label}</b></td></tr>
               <tr><th>路線名</th><td>${info.road}</td></tr>
-              <tr><th>管理者 / 組織</th><td>${info.admin}</td></tr>
+              <tr><th>管理者</th><td>${info.admin}</td></tr>
               <tr><th>所在地</th><td>${info.address}</td></tr>
-              <tr><th>架設年(経過年)</th><td>${info.year}</td></tr>
-              <tr><th>橋長 / 幅員</th><td>${lenStr} / ${widStr}</td></tr>
-              <tr><th>点検・データ年</th><td>${info.inspect}</td></tr>
+              <tr><th>架設年</th><td>${info.year}</td></tr>
+              <tr><th>橋長 / 幅員</th><td>${info.length} / ${info.width}</td></tr>
+              <tr><th>点検年度</th><td>${info.inspect}</td></tr>
               <tr><th>位置座標</th><td>${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</td></tr>
             </table>
             <details style="margin-top:8px; font-size:11px;">
