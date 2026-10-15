@@ -4,48 +4,61 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>全国 橋梁点検マップ（DPF連携）</title>
-  <!-- MapLibre GL JS -->
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif; background: #0f172a; }
     #map { width: 100%; height: 100%; cursor: crosshair; }
 
-    /* 左上コントロールパネル */
+    /* 左上コントロールパネル（折りたたみ対応） */
     .control-panel {
       position: absolute;
-      top: 14px;
-      left: 14px;
-      width: 340px;
-      max-width: calc(100vw - 28px);
-      background: rgba(15, 23, 42, 0.88);
+      top: 12px;
+      left: 12px;
+      width: 330px;
+      max-width: calc(100vw - 24px);
+      background: rgba(15, 23, 42, 0.9);
       color: #f8fafc;
-      padding: 16px;
+      padding: 14px;
       border-radius: 14px;
       z-index: 10;
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.45);
       border: 1px solid rgba(56, 189, 248, 0.3);
       backdrop-filter: blur(10px);
       box-sizing: border-box;
+      transition: all 0.2s ease;
     }
-    .panel-title {
-      font-size: 17px;
-      font-weight: 800;
-      color: #38bdf8;
-      margin: 0 0 10px 0;
+    .panel-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      letter-spacing: 0.5px;
+      cursor: pointer;
     }
-    .sub-badge {
-      font-size: 10px;
-      background: #0284c7;
-      color: #fff;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-weight: normal;
+    .panel-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #38bdf8;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
+    .toggle-btn {
+      background: #1e293b;
+      color: #cbd5e1;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .panel-body {
+      margin-top: 10px;
+    }
+    .panel-body.collapsed {
+      display: none;
+    }
+
     .btn-gps {
       width: 100%;
       padding: 11px;
@@ -62,9 +75,7 @@
       justify-content: center;
       gap: 6px;
       box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
-      transition: all 0.2s;
     }
-    .btn-gps:hover { opacity: 0.92; transform: translateY(-1px); }
     .btn-gps:active { transform: translateY(1px); }
 
     .style-switcher {
@@ -92,49 +103,57 @@
     .status-text {
       font-size: 12px;
       color: #e2e8f0;
-      line-height: 1.5;
+      line-height: 1.45;
       margin-bottom: 10px;
-      background: rgba(30, 41, 59, 0.7);
+      background: rgba(30, 41, 59, 0.75);
       padding: 8px 10px;
       border-radius: 6px;
     }
     .legend {
       display: flex;
-      gap: 6px;
+      gap: 5px;
       flex-wrap: wrap;
       font-size: 11px;
       border-top: 1px solid #334155;
-      padding-top: 10px;
+      padding-top: 8px;
     }
     .badge {
-      padding: 3px 8px;
+      padding: 3px 7px;
       border-radius: 4px;
       font-weight: bold;
       color: #fff;
     }
-    .b-3 { background: #ef4444; } /* 判定Ⅲ/Ⅳ */
-    .b-2 { background: #f59e0b; } /* 判定Ⅱ */
-    .b-1 { background: #10b981; } /* 判定Ⅰ */
+    .b-3 { background: #ef4444; }
+    .b-2 { background: #f59e0b; }
+    .b-1 { background: #10b981; }
 
-    /* MapLibre ポップアップのスタイル調整（右側切れ防止） */
+    /* ポップアップ表示調整（スマホでも見やすく・右端切れ完全防止） */
     .maplibregl-popup {
-      max-width: 340px !important;
-      z-index: 20;
+      max-width: 330px !important;
+      z-index: 30;
     }
     .maplibregl-popup-content {
       padding: 14px !important;
-      border-radius: 10px !important;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.35) !important;
+      border-radius: 12px !important;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.4) !important;
       font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
       box-sizing: border-box;
-      width: 310px;
-      max-width: calc(100vw - 40px);
+      width: 300px;
+      max-width: calc(100vw - 32px);
+      max-height: 75vh;
+      overflow-y: auto;
+    }
+    .maplibregl-popup-close-button {
+      font-size: 20px;
+      padding: 4px 8px;
+      color: #475569;
     }
     .popup-title {
       font-size: 15px;
       font-weight: bold;
       margin: 0 0 8px 0;
       padding-bottom: 5px;
+      padding-right: 18px;
       border-bottom: 2px solid #ef4444;
       color: #0f172a;
       word-break: break-all;
@@ -143,7 +162,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 12px;
-      table-layout: fixed; /* 右端切れを完全に防ぐ固定レイアウト */
+      table-layout: fixed;
     }
     .popup-table th, .popup-table td {
       border: 1px solid #cbd5e1;
@@ -155,43 +174,59 @@
     }
     .popup-table th {
       background: #f1f5f9;
-      width: 36%;
+      width: 38%;
       color: #334155;
       font-weight: 600;
     }
     .popup-table td {
-      width: 64%;
+      width: 62%;
       color: #0f172a;
+    }
+    .xroad-link {
+      display: block;
+      margin-top: 8px;
+      text-align: center;
+      background: #f1f5f9;
+      color: #0284c7;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 6px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
     }
   </style>
 </head>
 <body>
 
 <div class="control-panel">
-  <div class="panel-title">
-    <span>🌉 全国 橋梁点検マップ</span>
-    <span class="sub-badge">DPF連携・3D</span>
+  <div class="panel-header" onclick="togglePanel()">
+    <div class="panel-title">
+      <span>🌉 全国 橋梁点検マップ</span>
+    </div>
+    <button id="toggle-btn" class="toggle-btn">ー 最小化</button>
   </div>
 
-  <button class="btn-gps" onclick="searchByGPS()">
-    📍 現在地（GPS）から周辺20橋を検索
-  </button>
+  <div id="panel-body" class="panel-body">
+    <button class="btn-gps" onclick="searchByGPS()">
+      📍 現在地（GPS）から周辺20橋を検索
+    </button>
 
-  <div class="style-switcher">
-    <button id="btn-3d" class="style-btn active" onclick="switchBaseMap('3d')">🏙️ 3D立体地図</button>
-    <button id="btn-pale" class="style-btn" onclick="switchBaseMap('pale')">🗺️ 地理院淡色</button>
-    <button id="btn-photo" class="style-btn" onclick="switchBaseMap('photo')">🛰️ 航空写真</button>
-  </div>
+    <div class="style-switcher">
+      <button id="btn-3d" class="style-btn active" onclick="switchBaseMap('3d')">🏙️ 3D立体</button>
+      <button id="btn-pale" class="style-btn" onclick="switchBaseMap('pale')">🗺️ 地理院淡色</button>
+      <button id="btn-photo" class="style-btn" onclick="switchBaseMap('photo')">🛰️ 航空写真</button>
+    </div>
 
-  <div id="status" class="status-text">
-    日本全国対応。現在地ボタンを押すか、地図上の任意の場所をタップしてください（半径1.5km・周辺20橋）。<br>
-    <span style="font-size:11px; color:#94a3b8;">※右ドラッグ（スマホは2本指）で3D回転・傾き調整</span>
-  </div>
+    <div id="status" class="status-text">
+      日本全国対応。現在地ボタンを押すか、地図上の任意の場所をタップしてください（半径1.5km・周辺20橋）。
+    </div>
 
-  <div class="legend">
-    <span class="badge b-3">● 判定Ⅲ/Ⅳ(要措置)</span>
-    <span class="badge b-2">● 判定Ⅱ(予防保全)</span>
-    <span class="badge b-1">● 判定Ⅰ(健全)</span>
+    <div class="legend">
+      <span class="badge b-3">● 判定Ⅲ/Ⅳ(要措置)</span>
+      <span class="badge b-2">● 判定Ⅱ(予防保全)</span>
+      <span class="badge b-1">● 判定Ⅰ(健全)</span>
+    </div>
   </div>
 </div>
 
@@ -199,9 +234,41 @@
 
 <script>
   const WORKER_ENDPOINT = "https://tight-block-116a.morimite2001.workers.dev/";
-  const SEARCH_RADIUS = 1500.0; // 1.5km
+  const SEARCH_RADIUS = 1500.0;
 
-  // MapLibre 3Dマップ初期化（初期位置：鹿児島市、ピッチ55度の立体視点）
+  // 国交省DPFの英語キーを日本語に翻訳する辞書（実際のRSDB/DPF仕様準拠）
+  const KNOWN_LABELS = {
+    "DPF:title": "名称",
+    "DPF:route_name": "路線名",
+    "DPF:organization_name": "管理組織",
+    "DPF:Updated_organization_name": "データ更新組織",
+    "DPF:address": "所在地",
+    "DPF:erection_datetime": "架設年月日",
+    "DPF:year": "データ年度",
+    "DPF:latitude": "緯度",
+    "DPF:longitude": "経度",
+    "DPF:catalogo_title": "カタログ名",
+    "DPF:dataset_name": "データセット名",
+    "RSDB:shisetsu_mei": "施設名",
+    "RSDB:shisetsu_mei_kana": "施設名カナ",
+    "RSDB:rosen_mei": "路線名",
+    "RSDB:kanrisha_mei": "管理者名",
+    "RSDB:kanrisha_code": "管理者コード",
+    "RSDB:todoufuken_code": "都道府県コード",
+    "RSDB:shisetsu_kubun": "施設区分",
+    "RSDB:kasetsu_nen": "架設年",
+    "RSDB:kyoucho": "橋長(m)",
+    "RSDB:enchou": "延長(m)",
+    "RSDB:fukuin": "幅員(m)",
+    "RSDB:tenken_nendo": "点検年度",
+    "RSDB:kiroku_nendo": "点検記録年度",
+    "RSDB:kiroku_hantei_kubun": "健全性判定区分",
+    "RSDB:hantei_kubun": "健全性判定区分",
+    "RSDB:zenkoku_hantei": "健全性判定区分",
+    "RSDB:shuzen_sochi_joukyou": "修繕措置状況",
+    "RSDB:koushin_nichiji": "DB更新日時"
+  };
+
   const map = new maplibregl.Map({
     container: 'map',
     style: 'https://tiles.openfreemap.org/styles/liberty',
@@ -212,148 +279,188 @@
     antialias: true
   });
 
-  // 右下にナビゲーション（回転・傾き・ズーム）を追加
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
 
   let bridgeMarkers = [];
   let centerMarker = null;
 
-  // マップロード完了時に国土地理院タイルレイヤーと検索円用ソースを準備
-  map.on('load', () => {
-    setupExtraLayers();
-  });
-
-  function setupExtraLayers() {
-    if (!map.getSource('gsi-pale')) {
-      map.addSource('gsi-pale', {
-        type: 'raster',
-        tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '国土地理院'
-      });
-      map.addLayer({
-        id: 'gsi-pale-layer',
-        type: 'raster',
-        source: 'gsi-pale',
-        layout: { visibility: 'none' }
-      });
-    }
-    if (!map.getSource('gsi-photo')) {
-      map.addSource('gsi-photo', {
-        type: 'raster',
-        tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],
-        tileSize: 256,
-        attribution: '国土地理院'
-      });
-      map.addLayer({
-        id: 'gsi-photo-layer',
-        type: 'raster',
-        source: 'gsi-photo',
-        layout: { visibility: 'none' }
-      });
-    }
-    if (!map.getSource('search-circle')) {
-      map.addSource('search-circle', {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] }
-      });
-      map.addLayer({
-        id: 'search-circle-fill',
-        type: 'fill',
-        source: 'search-circle',
-        paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.12 }
-      });
-      map.addLayer({
-        id: 'search-circle-line',
-        type: 'line',
-        source: 'search-circle',
-        paint: { 'line-color': '#0284c7', 'line-width': 2.5 }
-      });
+  // パネルの折りたたみ切り替え
+  function togglePanel() {
+    const body = document.getElementById('panel-body');
+    const btn = document.getElementById('toggle-btn');
+    if (body.classList.contains('collapsed')) {
+      body.classList.remove('collapsed');
+      btn.textContent = 'ー 最小化';
+    } else {
+      body.classList.add('collapsed');
+      btn.textContent = '＋ 開く';
     }
   }
 
-  // 背景マップ切り替え
+  map.on('load', () => {
+    map.addSource('gsi-pale', {
+      type: 'raster',
+      tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '国土地理院'
+    });
+    map.addLayer({ id: 'gsi-pale-layer', type: 'raster', source: 'gsi-pale', layout: { visibility: 'none' } });
+
+    map.addSource('gsi-photo', {
+      type: 'raster',
+      tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],
+      tileSize: 256,
+      attribution: '国土地理院'
+    });
+    map.addLayer({ id: 'gsi-photo-layer', type: 'raster', source: 'gsi-photo', layout: { visibility: 'none' } });
+
+    map.addSource('search-circle', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addLayer({
+      id: 'search-circle-fill',
+      type: 'fill',
+      source: 'search-circle',
+      paint: { 'fill-color': '#38bdf8', 'fill-opacity': 0.12 }
+    });
+    map.addLayer({
+      id: 'search-circle-line',
+      type: 'line',
+      source: 'search-circle',
+      paint: { 'line-color': '#0284c7', 'line-width': 2.5 }
+    });
+  });
+
   function switchBaseMap(mode) {
     document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('btn-' + mode).classList.add('active');
-
     if (map.getLayer('gsi-pale-layer') && map.getLayer('gsi-photo-layer')) {
       map.setLayoutProperty('gsi-pale-layer', 'visibility', mode === 'pale' ? 'visible' : 'none');
       map.setLayoutProperty('gsi-photo-layer', 'visibility', mode === 'photo' ? 'visible' : 'none');
     }
   }
 
-  // 半径1.5kmのポリゴン（円）を生成する関数
   function createCircleGeoJSON(centerLon, centerLat, radiusInMeters, points = 64) {
     const coords = [];
     const distanceX = radiusInMeters / (111320 * Math.cos(centerLat * Math.PI / 180));
     const distanceY = radiusInMeters / 110574;
     for (let i = 0; i <= points; i++) {
       const theta = (i / points) * (2 * Math.PI);
-      const x = distanceX * Math.cos(theta);
-      const y = distanceY * Math.sin(theta);
-      coords.push([centerLon + x, centerLat + y]);
+      coords.push([centerLon + distanceX * Math.cos(theta), centerLat + distanceY * Math.sin(theta)]);
     }
     return {
       type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        geometry: { type: 'Polygon', coordinates: [coords] }
-      }]
+      features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [coords] } }]
     };
   }
 
-  // 判定区分に応じた色とラベル
   function getJudgeStyle(judgeStr) {
     const s = String(judgeStr || "").trim();
     if (s === "4" || s.includes("Ⅳ") || s.includes("IV")) return { color: "#7f1d1d", label: "判定Ⅳ (緊急措置段階)" };
     if (s === "3" || s.includes("Ⅲ") || s.includes("III")) return { color: "#ef4444", label: "判定Ⅲ (早期措置段階)" };
     if (s === "2" || s.includes("Ⅱ") || s.includes("II")) return { color: "#f59e0b", label: "判定Ⅱ (予防保全段階)" };
     if (s === "1" || s.includes("Ⅰ") || s.includes("I")) return { color: "#10b981", label: "判定Ⅰ (健全)" };
-    return { color: "#ef4444", label: s && s !== "記録なし" ? `判定: ${s}` : "記録確認中" };
+    return { color: "#ef4444", label: s && s !== "記録なし" ? `区分: ${s}` : "記録確認中" };
   }
 
-  // 国土交通DPFのRSDB属性・DPF属性に対応した高精度データ抽出
+  // 国交省DPF・RSDBの実際のキー構造に合わせて正確に抽出
   function getMetaInfo(meta) {
     if (!meta || typeof meta !== 'object') {
-      return { road: "記録なし", admin: "記録なし", year: "記録なし", length: "-", width: "-", inspect: "記録なし", judge: "記録なし" };
+      return { road: "記録なし", admin: "記録なし", year: "記録なし", length: "-", width: "-", inspect: "記録なし", judge: "記録なし", address: "記録なし" };
     }
 
-    // 1. 優先キーリストで完全一致・部分一致を探す
-    const pick = (exactKeys, partialKeywords) => {
+    const pick = (exactKeys, partialWords, excludeKeys = []) => {
       for (const ek of exactKeys) {
         if (meta[ek] !== undefined && meta[ek] !== null && meta[ek] !== "") return String(meta[ek]);
       }
       for (const [k, v] of Object.entries(meta)) {
         if (v === null || v === "" || typeof v === "object") continue;
+        if (excludeKeys.includes(k)) continue;
         const kl = k.toLowerCase();
-        for (const kw of partialKeywords) {
-          if (kl.includes(kw.toLowerCase())) return String(v);
+        for (const w of partialWords) {
+          if (kl.includes(w.toLowerCase())) return String(v);
         }
       }
       return "記録なし";
     };
 
-    // 架設年の整形（例: 19880401 -> 1988年）
-    let rawYear = pick(["RSDB:kasetsu_nen", "DPF:year", "RSDB:built_year"], ["kasetsu", "架設", "built", "完成", "竣工"]);
-    if (/^\d{8}$/.test(rawYear)) rawYear = rawYear.substring(0, 4) + "年";
+    // 1. 架設年の取得（DPF:erection_datetime "1966-04-01T..." を最優先し、DPF:year は除外）
+    let rawErection = pick(
+      ["DPF:erection_datetime", "RSDB:kasetsu_nen", "RSDB:kyouyou_nen"],
+      ["erection", "kasetsu", "架設", "完成", "竣工"],
+      ["DPF:year", "DPF:year_origin", "RSDB:koushin_nichiji", "DPF:last_updated_datetime"]
+    );
+    let formattedYear = rawErection;
+    if (/^\d{4}-\d{2}-\d{2}/.test(rawErection)) {
+      const y = parseInt(rawErection.substring(0, 4), 10);
+      const age = new Date().getFullYear() - y;
+      formattedYear = `${y}年 (築${age}年)`;
+    } else if (/^\d{4}$/.test(rawErection)) {
+      const y = parseInt(rawErection, 10);
+      const age = new Date().getFullYear() - y;
+      formattedYear = `${y}年 (築${age}年)`;
+    }
+
+    // 2. 点検年度（RSDB:kiroku_nendo や DPF:year、または更新日時から取得）
+    let rawInspect = pick(
+      ["RSDB:tenken_nendo", "RSDB:kiroku_nendo", "DPF:year"],
+      ["tenken", "kiroku_nendo", "点検"],
+      ["DPF:year_origin"]
+    );
+    if (rawInspect !== "記録なし" && /^\d{4}$/.test(rawInspect)) {
+      rawInspect = rawInspect + "年度";
+    }
+
+    // 3. 健全性判定区分（RSDB:kiroku_hantei_kubun 等）
+    let rawJudge = pick(
+      ["RSDB:kiroku_hantei_kubun", "RSDB:hantei_kubun", "RSDB:zenkoku_hantei", "RSDB:shuzen_hantei"],
+      ["hantei", "判定", "健全"],
+      ["RSDB:shisetsu_kubun"]
+    );
+
+    // 4. 橋長・延長と幅員
+    let rawLength = pick(
+      ["RSDB:kyoucho", "RSDB:enchou", "DPF:length", "RSDB:bridge_length"],
+      ["kyoucho", "enchou", "橋長", "延長", "length"],
+      []
+    );
+    let rawWidth = pick(
+      ["RSDB:fukuin", "RSDB:width", "DPF:width", "RSDB:zen_fukuin"],
+      ["fukuin", "幅員", "width"],
+      []
+    );
+
+    // 5. 管理者
+    let rawAdmin = pick(
+      ["RSDB:kanrisha_mei", "DPF:organization_name", "DPF:Updated_organization_name", "DPF:admin_name"],
+      ["kanrisha", "organization", "管理", "事務所"],
+      []
+    );
+
+    // 6. 所在地
+    let rawAddress = pick(
+      ["DPF:address", "RSDB:shozaichi"],
+      ["address", "shozai", "所在", "住所"],
+      []
+    );
 
     return {
-      road: pick(["DPF:route_name", "RSDB:rosen_mei", "RSDB:route_name"], ["route_name", "rosen", "路線"]),
-      admin: pick(["DPF:organization_name", "DPF:admin_name", "RSDB:kanrisha_mei", "DPF:creator"], ["organization", "kanrisha", "admin", "管理", "事務所", "自治体"]),
-      year: rawYear,
-      length: pick(["RSDB:kyoucho", "RSDB:length", "DPF:length"], ["kyoucho", "橋長", "延長", "length"]),
-      width: pick(["RSDB:fukuin", "RSDB:width", "DPF:width"], ["fukuin", "幅員", "width"]),
-      inspect: pick(["RSDB:tenken_nendo", "RSDB:inspection_year", "DPF:inspection_year"], ["tenken", "点検", "inspect"]),
-      judge: pick(["RSDB:zenkoku_hantei", "RSDB:hantei_kubun", "RSDB:judge"], ["hantei", "判定", "健全", "judge", "区分"])
+      road: pick(["DPF:route_name", "RSDB:rosen_mei"], ["route_name", "rosen", "路線"]),
+      admin: rawAdmin,
+      year: formattedYear,
+      length: rawLength,
+      width: rawWidth,
+      inspect: rawInspect,
+      judge: rawJudge,
+      address: rawAddress
     };
   }
 
-  // GPS現在地検索
   function searchByGPS() {
     const status = document.getElementById('status');
     if (!navigator.geolocation) {
-      status.innerHTML = "❌ お使いの端末・ブラウザは位置情報に対応していません。";
+      status.innerHTML = "❌ お使いの端末は位置情報に対応していません。";
       return;
     }
     status.innerHTML = "📡 GPS・Wi-Fiから現在地を取得しています...";
@@ -371,7 +478,6 @@
     );
   }
 
-  // 地図クリックで検索（マーカー自体のクリック時は発火させない）
   map.on('click', (e) => {
     if (e.originalEvent.target.closest('.bridge-marker') || e.originalEvent.target.closest('.maplibregl-popup')) {
       return;
@@ -382,17 +488,14 @@
   async function fetchBridges(lat, lon, label) {
     const status = document.getElementById('status');
 
-    // 既存マーカーのクリア
     bridgeMarkers.forEach(m => m.remove());
     bridgeMarkers = [];
     if (centerMarker) centerMarker.remove();
 
-    // 半径1.5kmの円を描画
     if (map.getSource('search-circle')) {
       map.getSource('search-circle').setData(createCircleGeoJSON(lon, lat, SEARCH_RADIUS));
     }
 
-    // 検索中心ピン
     centerMarker = new maplibregl.Marker({ color: "#0284c7" })
       .setLngLat([lon, lat])
       .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`<b>📍 ${label}</b><br>緯度: ${lat.toFixed(5)}<br>経度: ${lon.toFixed(5)}`))
@@ -450,7 +553,13 @@
         return;
       }
 
-      status.innerHTML = `✅ 検索ヒット総数: <b>${total}件</b>（周辺 <b>${records.length}橋</b> を3Dマップ上に描画）<br>丸い点をタップすると点検結果を表示します。`;
+      status.innerHTML = `✅ 検索ヒット総数: <b>${total}件</b>（周辺 <b>${records.length}橋</b> を描画）<br>丸い点をタップすると点検結果を表示します。`;
+
+      // スマホ画面（横幅600px以下）の場合は検索完了後に自動でパネルを最小化して地図を広く見せる
+      if (window.innerWidth <= 600) {
+        document.getElementById('panel-body').classList.add('collapsed');
+        document.getElementById('toggle-btn').textContent = '＋ 開く';
+      }
 
       records.forEach((item) => {
         if (!item.lat || !item.lon) return;
@@ -458,24 +567,30 @@
         const info = getMetaInfo(meta);
         const style = getJudgeStyle(info.judge);
 
-        // 赤丸・緑丸などのカスタムHTMLマーカー
         const el = document.createElement('div');
         el.className = 'bridge-marker';
-        el.style.width = '20px';
-        el.style.height = '20px';
+        el.style.width = '22px';
+        el.style.height = '22px';
         el.style.borderRadius = '50%';
         el.style.backgroundColor = style.color;
         el.style.border = '3px solid #ffffff';
-        el.style.boxShadow = '0 3px 8px rgba(0,0,0,0.45)';
+        el.style.boxShadow = '0 3px 8px rgba(0,0,0,0.5)';
         el.style.cursor = 'pointer';
 
-        // 全登録項目テーブル
+        // 全登録項目テーブル（日本語ラベル付きで見やすく整形）
         let allMetaRows = "";
         for (const [k, v] of Object.entries(meta)) {
           if (v !== null && v !== "" && typeof v !== "object") {
-            allMetaRows += `<tr><th>${k}</th><td>${v}</td></tr>`;
+            const jpLabel = KNOWN_LABELS[k] ? `${KNOWN_LABELS[k]}<br><span style="font-size:9px;color:#64748b;">(${k})</span>` : k;
+            let dispVal = String(v);
+            if (/^\d{4}-\d{2}-\d{2}T/.test(dispVal)) dispVal = dispVal.substring(0, 10);
+            allMetaRows += `<tr><th>${jpLabel}</th><td>${dispVal}</td></tr>`;
           }
         }
+
+        // 橋長・幅員の表示整形
+        const lenStr = info.length !== "記録なし" ? `${info.length} m` : "記録なし";
+        const widStr = info.width !== "記録なし" ? `${info.width} m` : "記録なし";
 
         const popupHtml = `
           <div>
@@ -485,15 +600,16 @@
             <table class="popup-table">
               <tr><th>健全性判定</th><td><b style="color:${style.color};">${style.label}</b></td></tr>
               <tr><th>路線名</th><td>${info.road}</td></tr>
-              <tr><th>管理者</th><td>${info.admin}</td></tr>
-              <tr><th>架設年度</th><td>${info.year}</td></tr>
-              <tr><th>橋長 / 幅員</th><td>${info.length} m / ${info.width} m</td></tr>
-              <tr><th>最新点検年</th><td>${info.inspect}</td></tr>
+              <tr><th>管理者 / 組織</th><td>${info.admin}</td></tr>
+              <tr><th>所在地</th><td>${info.address}</td></tr>
+              <tr><th>架設年(経過年)</th><td>${info.year}</td></tr>
+              <tr><th>橋長 / 幅員</th><td>${lenStr} / ${widStr}</td></tr>
+              <tr><th>点検・データ年</th><td>${info.inspect}</td></tr>
               <tr><th>位置座標</th><td>${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</td></tr>
             </table>
             <details style="margin-top:8px; font-size:11px;">
               <summary style="cursor:pointer; color:#0284c7; font-weight:bold;">📋 国交省DPFの全登録項目を見る</summary>
-              <div style="max-height:140px; overflow-y:auto; margin-top:5px;">
+              <div style="max-height:160px; overflow-y:auto; margin-top:5px;">
                 <table class="popup-table">${allMetaRows}</table>
               </div>
             </details>
