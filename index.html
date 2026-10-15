@@ -8,15 +8,15 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Meiryo", sans-serif; }
-    #map { width: 100%; height: 100%; }
+    #map { width: 100%; height: 100%; cursor: crosshair; }
     
-    /* 操作パネル（スマホでも邪魔にならないフローティング設計） */
+    /* 操作パネル（スマホ・タブレット対応） */
     .control-panel {
       position: absolute;
       top: 12px;
       left: 12px;
       right: 12px;
-      max-width: 380px;
+      max-width: 360px;
       background: rgba(15, 23, 42, 0.92);
       color: #f8fafc;
       padding: 14px;
@@ -29,14 +29,11 @@
       font-size: 16px;
       font-weight: bold;
       color: #38bdf8;
-      margin: 0 0 8px 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      margin: 0 0 10px 0;
     }
     .btn-gps {
       width: 100%;
-      padding: 10px;
+      padding: 11px;
       background: #0284c7;
       color: #fff;
       border: none;
@@ -44,18 +41,20 @@
       font-size: 14px;
       font-weight: bold;
       cursor: pointer;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.4);
     }
-    .btn-gps:active { background: #0369a1; }
+    .btn-gps:hover { background: #0369a1; }
+    .btn-gps:active { transform: translateY(1px); }
     .status-text {
       font-size: 12px;
-      color: #cbd5e1;
-      line-height: 1.4;
-      margin-bottom: 8px;
+      color: #e2e8f0;
+      line-height: 1.5;
+      margin-bottom: 10px;
     }
     .legend {
       display: flex;
@@ -71,31 +70,12 @@
       font-weight: bold;
       color: #fff;
     }
-    .b-1 { background: #10b981; } /* 判定Ⅰ */
-    .b-2 { background: #f59e0b; } /* 判定Ⅱ */
-    .b-3 { background: #ef4444; } /* 判定Ⅲ */
-    .b-4 { background: #7f1d1d; } /* 判定Ⅳ */
-    .b-u { background: #64748b; } /* 不明 */
+    .b-1 { background: #10b981; } /* 判定Ⅰ: 緑 */
+    .b-2 { background: #f59e0b; } /* 判定Ⅱ: オレンジ */
+    .b-3 { background: #ef4444; } /* 判定Ⅲ: 赤 */
+    .b-4 { background: #7f1d1d; } /* 判定Ⅳ: 濃赤 */
 
-    /* APIキー設定エリア */
-    .key-box {
-      margin-top: 8px;
-      padding-top: 8px;
-      border-top: 1px solid #334155;
-      font-size: 11px;
-    }
-    .key-input {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 6px;
-      border-radius: 4px;
-      border: 1px solid #475569;
-      background: #1e293b;
-      color: #fff;
-      margin-top: 4px;
-    }
-
-    /* ポップアップ内テーブル */
+    /* ポップアップ内デザイン */
     .popup-title {
       font-size: 15px;
       font-weight: bold;
@@ -124,106 +104,94 @@
 <body>
 
 <div class="control-panel">
-  <div class="panel-title">
-    <span>🌉 鹿児島 橋梁点検マップ</span>
-    <button onclick="toggleKeyBox()" style="background:none;border:1px solid #475569;color:#94a3b8;border-radius:4px;font-size:11px;padding:2px 6px;cursor:pointer;">APIキー設定</button>
-  </div>
+  <div class="panel-title">🌉 鹿児島 橋梁点検マップ</div>
 
   <button class="btn-gps" onclick="searchByGPS()">
     📍 現在地（GPS）から周辺20橋を検索
   </button>
 
   <div id="status" class="status-text">
-    現在地ボタンを押すか、地図上の調べたい場所をタップしてください（半径1.5km・最大20橋）。
+    現在地ボタンを押すか、地図上の調べたい場所をタップしてください（半径1.5km・周辺20橋を表示）。
   </div>
 
   <div class="legend">
     <span class="badge b-3">● 判定Ⅲ/Ⅳ(要措置)</span>
     <span class="badge b-2">● 判定Ⅱ(予防保全)</span>
     <span class="badge b-1">● 判定Ⅰ(健全)</span>
-    <span class="badge b-u">● 記録確認中</span>
-  </div>
-
-  <div id="key-box" class="key-box" style="display:none;">
-    <div>国土交通DPF APIキー（ブラウザに保存されます）：</div>
-    <input type="password" id="dpf-key-input" class="key-input" placeholder="DPF APIキーを入力" onchange="saveApiKey()" />
   </div>
 </div>
 
 <div id="map"></div>
 
 <script>
-  const DPF_ENDPOINT = "https://data-platform.mlit.go.jp/api/v1/";
-  const SEARCH_RADIUS = 1500.0; // 1.5km
+  // 作成したCloudflare Workersの専用中継URL
+  const WORKER_ENDPOINT = "https://tight-block-116a.morimite2001.workers.dev/";
+  const SEARCH_RADIUS = 1500.0; // 検索半径 1.5km
 
-  // 初期表示：鹿児島市役所周辺（ズームコントロールは右下へ配置）
+  // 初期表示：鹿児島市中心部
   const map = L.map('map', { zoomControl: false }).setView([31.596728, 130.557147], 14);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-  // 地図タイル（地理院淡色地図 ＆ OpenStreetMap ＆ 航空写真）
+  // 地図タイル（国土地理院淡色 ＆ 航空写真 ＆ OpenStreetMap）
   const gsiPale = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', { attribution: '国土地理院' });
   const gsiPhoto = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { attribution: '国土地理院' });
   const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' });
   gsiPale.addTo(map);
   L.control.layers({
     "国土地理院(淡色)": gsiPale,
-    "航空写真": gsiPhoto,
+    "航空写真(シームレス)": gsiPhoto,
     "OpenStreetMap": osm
   }, null, { position: 'bottomright' }).addTo(map);
 
   let markersLayer = L.layerGroup().addTo(map);
   let searchCircle = null;
 
-  // 保存済みAPIキーの読み込み
-  window.addEventListener('DOMContentLoaded', () => {
-    const savedKey = localStorage.getItem('mlit_dpf_api_key') || '';
-    document.getElementById('dpf-key-input').value = savedKey;
-    if (!savedKey) {
-      document.getElementById('key-box').style.display = 'block';
-    }
-  });
-
-  function toggleKeyBox() {
-    const box = document.getElementById('key-box');
-    box.style.display = (box.style.display === 'none') ? 'block' : 'none';
-  }
-
-  function saveApiKey() {
-    const val = document.getElementById('dpf-key-input').value.trim();
-    localStorage.setItem('mlit_dpf_api_key', val);
-    document.getElementById('status').innerHTML = "✅ APIキーをブラウザに保存しました。地図をタップして検索できます。";
-  }
-
-  // 判定区分に応じたマーカー色を返す
+  // 判定区分に応じたマーカー色を決定
   function getJudgeStyle(judgeStr) {
     const s = String(judgeStr || "");
-    if (s.includes("4") || s.includes("Ⅳ") || s.includes("IV")) return { color: "#7f1d1d", label: "判定Ⅳ (緊急措置)" };
-    if (s.includes("3") || s.includes("Ⅲ") || s.includes("III")) return { color: "#ef4444", label: "判定Ⅲ (早期措置)" };
-    if (s.includes("2") || s.includes("Ⅱ") || s.includes("II")) return { color: "#f59e0b", label: "判定Ⅱ (予防保全)" };
+    if (s.includes("4") || s.includes("Ⅳ") || s.includes("IV")) return { color: "#7f1d1d", label: "判定Ⅳ (緊急措置段階)" };
+    if (s.includes("3") || s.includes("Ⅲ") || s.includes("III")) return { color: "#ef4444", label: "判定Ⅲ (早期措置段階)" };
+    if (s.includes("2") || s.includes("Ⅱ") || s.includes("II")) return { color: "#f59e0b", label: "判定Ⅱ (予防保全段階)" };
     if (s.includes("1") || s.includes("Ⅰ") || s.includes("I")) return { color: "#10b981", label: "判定Ⅰ (健全)" };
-    return { color: "#ef4444", label: s || "記録確認中" }; // デフォルトは視認性の高い赤丸
+    return { color: "#ef4444", label: s || "記録確認中" }; // 目立つ赤丸を基本色に設定
   }
 
-  // メタデータから目的の属性を柔軟に抽出
-  function pickMeta(meta, keys) {
-    if (!meta || typeof meta !== 'object') return "記録なし";
-    for (const [k, v] of Object.entries(meta)) {
-      if (v === null || v === "") continue;
-      for (const kw of keys) {
-        if (k.toLowerCase().includes(kw.toLowerCase())) return String(v);
-      }
+  // 国土交通DPFの日本語キー・英語キー両方に対応したデータ抽出関数
+  function getMetaInfo(meta) {
+    if (!meta || typeof meta !== 'object') {
+      return { road: "記録なし", admin: "記録なし", year: "記録なし", length: "-", width: "-", inspect: "記録なし", judge: "記録確認中" };
     }
-    return "記録なし";
+
+    // DPF橋梁データでよく使われる属性キーを網羅的に探索
+    const findVal = (keywords) => {
+      for (const [k, v] of Object.entries(meta)) {
+        if (v === null || v === "" || typeof v === "object") continue;
+        for (const kw of keywords) {
+          if (k.toLowerCase().includes(kw.toLowerCase())) return String(v);
+        }
+      }
+      return "記録なし";
+    };
+
+    return {
+      road: findVal(["路線", "road", "line", "route"]),
+      admin: findVal(["管理", "admin", "manager", "事務所", "自治体", "office"]),
+      year: findVal(["架設", "完成", "built", "construct", "start"]),
+      length: findVal(["橋長", "延長", "length"]),
+      width: findVal(["幅員", "width"]),
+      inspect: findVal(["点検", "調査", "inspect"]),
+      judge: findVal(["判定", "健全", "措置", "区分", "judge", "rank", "eval"])
+    };
   }
 
   // GPS現在地から検索
   function searchByGPS() {
     const status = document.getElementById('status');
     if (!navigator.geolocation) {
-      status.innerHTML = "❌ お使いのブラウザは位置情報に対応していません。";
+      status.innerHTML = "❌ お使いの端末・ブラウザは位置情報に対応していません。";
       return;
     }
-    status.innerHTML = "📡 GPSで現在地を取得しています...";
+    status.innerHTML = "📡 GPS・Wi-Fiから現在地を取得しています...";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const lat = pos.coords.latitude;
@@ -232,61 +200,37 @@
         fetchBridges(lat, lon, "現在地（GPS）");
       },
       (err) => {
-        status.innerHTML = "❌ 位置情報の取得に失敗しました。スマホの位置情報許可を確認してください。";
+        status.innerHTML = "❌ 現在地の取得に失敗しました。ブラウザの位置情報許可をONにするか、地図上を直接タップしてください。";
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   }
 
-  // 地図タップ・クリックで検索
+  // 地図上のクリック・タップで検索
   map.on('click', (e) => {
     fetchBridges(e.latlng.lat, e.latlng.lng, "指定地点");
   });
 
-  // DPF APIへリクエスト（直接通信がCORSブロックされた場合は自動でプロキシ経由にフォールバック）
-  async function postToDPF(apiKey, query) {
-    const payload = JSON.stringify({ query });
-    const headers = { "Content-Type": "application/json", "apikey": apiKey };
-
-    try {
-      const res = await fetch(DPF_ENDPOINT, { method: "POST", headers, body: payload });
-      if (res.ok) return await res.json();
-    } catch (e) {
-      // ブラウザ直接通信がCORS制限された場合の中継フォールバック
-      const proxyUrl = "https://corsproxy.io/?" + encodeURIComponent(DPF_ENDPOINT);
-      const res2 = await fetch(proxyUrl, { method: "POST", headers, body: payload });
-      if (res2.ok) return await res2.json();
-      throw e;
-    }
-    throw new Error("API通信エラー");
-  }
-
   async function fetchBridges(lat, lon, label) {
-    const apiKey = document.getElementById('dpf-key-input').value.trim();
     const status = document.getElementById('status');
-
-    if (!apiKey) {
-      document.getElementById('key-box').style.display = 'block';
-      status.innerHTML = "⚠️ 先に「APIキー設定」から国土交通DPFのAPIキーを入力してください。";
-      return;
-    }
 
     markersLayer.clearLayers();
     if (searchCircle) map.removeLayer(searchCircle);
 
-    // 検索範囲の円と中心ピンを描画
+    // 半径1.5kmのサークルを描画
     searchCircle = L.circle([lat, lon], {
       radius: SEARCH_RADIUS,
-      color: '#38bdf8',
+      color: '#0284c7',
       weight: 2,
       fillOpacity: 0.08
     }).addTo(map);
 
+    // 中心ピンを立てる
     L.marker([lat, lon]).addTo(markersLayer)
       .bindPopup(`<b>📍 ${label}</b><br>緯度: ${lat.toFixed(5)}<br>経度: ${lon.toFixed(5)}`)
       .openPopup();
 
-    status.innerHTML = `🔄 ${label}から半径1.5km以内の橋梁を検索中...`;
+    status.innerHTML = `🔄 ${label}から半径1.5km以内の橋梁データを取得中...`;
 
     const query = `
       query {
@@ -315,7 +259,17 @@
     `;
 
     try {
-      const json = await postToDPF(apiKey, query);
+      const response = await fetch(WORKER_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP status ${response.status}`);
+      }
+
+      const json = await response.json();
       if (json.errors) {
         status.innerHTML = "❌ クエリエラー: " + json.errors[0].message;
         return;
@@ -330,49 +284,51 @@
         return;
       }
 
-      status.innerHTML = `✅ ヒット総数: <b>${total}件</b>（周辺 <b>${records.length}橋</b> を描画）<br>丸い点をタップすると点検結果を表示します。`;
+      status.innerHTML = `✅ 検索ヒット総数: <b>${total}件</b>（周辺 <b>${records.length}橋</b> を描画）<br>丸い点をタップすると点検結果を表示します。`;
 
       records.forEach((item) => {
         if (!item.lat || !item.lon) return;
         const meta = item.metadata || {};
+        const info = getMetaInfo(meta);
+        const style = getJudgeStyle(info.judge);
 
-        const roadName = pickMeta(meta, ["路線", "road", "line"]);
-        const adminName = pickMeta(meta, ["管理", "admin", "manager", "事務所", "自治体"]);
-        const builtYear = pickMeta(meta, ["架設", "built", "完成", "start", "年"]);
-        const length = pickMeta(meta, ["橋長", "length", "延長"]);
-        const width = pickMeta(meta, ["幅員", "width"]);
-        const inspectYear = pickMeta(meta, ["点検", "inspection"]);
-        const judgeRaw = pickMeta(meta, ["判定", "健全", "judge", "区分", "評価"]);
-
-        const style = getJudgeStyle(judgeRaw);
-
-        // 赤丸などのサークルマーカーで地図上にプロット
+        // 赤丸・緑丸などのサークルマーカーを描画
         const marker = L.circleMarker([item.lat, item.lon], {
           radius: 10,
           fillColor: style.color,
           color: "#ffffff",
-          weight: 2,
+          weight: 2.5,
           opacity: 1,
           fillOpacity: 0.9
         }).addTo(markersLayer);
 
+        // すべての登録メタデータを一覧表として展開できるHTMLを作成
+        let allMetaRows = "";
+        for (const [k, v] of Object.entries(meta)) {
+          if (v !== null && v !== "" && typeof v !== "object") {
+            allMetaRows += `<tr><th>${k}</th><td>${v}</td></tr>`;
+          }
+        }
+
         const popupHtml = `
-          <div style="min-width:230px;">
+          <div style="min-width:250px; max-width:320px;">
             <div class="popup-title" style="border-color:${style.color};">
               ${item.title || "名称未詳"}
             </div>
             <table class="popup-table">
               <tr><th>健全性判定</th><td><b style="color:${style.color};">${style.label}</b></td></tr>
-              <tr><th>路線名</th><td>${roadName}</td></tr>
-              <tr><th>管理者</th><td>${adminName}</td></tr>
-              <tr><th>架設年度</th><td>${builtYear}</td></tr>
-              <tr><th>橋長 / 幅員</th><td>${length} m / ${width} m</td></tr>
-              <tr><th>最新点検年</th><td>${inspectYear}</td></tr>
-              <tr><th>座標</th><td>${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</td></tr>
+              <tr><th>路線名</th><td>${info.road}</td></tr>
+              <tr><th>管理者</th><td>${info.admin}</td></tr>
+              <tr><th>架設年度</th><td>${info.year}</td></tr>
+              <tr><th>橋長 / 幅員</th><td>${info.length} m / ${info.width} m</td></tr>
+              <tr><th>最新点検年</th><td>${info.inspect}</td></tr>
+              <tr><th>位置座標</th><td>${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</td></tr>
             </table>
-            <details style="margin-top:6px; font-size:11px;">
-              <summary style="cursor:pointer; color:#0284c7;">詳細メタデータを表示</summary>
-              <pre style="max-height:110px; overflow:auto; background:#f8fafc; padding:4px; margin-top:4px;">${JSON.stringify(meta, null, 2)}</pre>
+            <details style="margin-top:8px; font-size:11px;">
+              <summary style="cursor:pointer; color:#0284c7; font-weight:bold;">📋 国交省DPFの全登録項目を見る</summary>
+              <div style="max-height:150px; overflow-y:auto; margin-top:4px;">
+                <table class="popup-table">${allMetaRows}</table>
+              </div>
             </details>
           </div>
         `;
@@ -380,7 +336,7 @@
       });
 
     } catch (err) {
-      status.innerHTML = "❌ データ取得エラー。APIキーが正しいか確認してください。";
+      status.innerHTML = "❌ 通信エラーが発生しました: " + err.message;
       console.error(err);
     }
   }
