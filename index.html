@@ -78,19 +78,29 @@
     .popup-table th, .popup-table td { border: 1px solid #cbd5e1; padding: 5px 6px; text-align: left; word-break: break-all; overflow-wrap: break-word; vertical-align: top; }
     .popup-table th { background: #f1f5f9; width: 38%; color: #334155; font-weight: 600; }
     .popup-table td { width: 62%; color: #0f172a; }
+
+    .type-switcher { display: flex; gap: 6px; margin-top: 10px; }
+    .type-btn { flex: 1; padding: 9px 4px; font-size: 13px; background: #1e293b; color: #cbd5e1; border: 1px solid #334155; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    .type-btn.active { background: #f8fafc; color: #0f172a; border-color: #f8fafc; }
   </style>
 </head>
 <body>
-
 <div class="control-panel">
   <div class="panel-header" onclick="togglePanel()">
-    <div class="panel-title"><span>🌉 全国 橋梁点検マップ</span></div>
+    <div class="panel-title"><span id="panel-title-text">🌉 全国 橋梁点検マップ</span></div>
     <button id="toggle-btn" class="toggle-btn">ー 最小化</button>
+  </div>
+
+  <!-- 施設種別の切替（パネルを最小化しても常に表示される） -->
+  <div class="type-switcher">
+    <button id="type-bridge" class="type-btn active" onclick="switchFacility('bridge')">🌉 橋梁</button>
+    <button id="type-tunnel" class="type-btn" onclick="switchFacility('tunnel')">🚇 トンネル</button>
+    <button id="type-deck" class="type-btn" onclick="switchFacility('deck')">🚶 歩道橋</button>
   </div>
 
   <div id="panel-body" class="panel-body">
     <button class="btn-gps" onclick="searchByGPS()">
-      📍 現在地（GPS）から周辺20橋を検索
+      <span id="gps-label">📍 現在地（GPS）から周辺20橋を検索</span>
     </button>
 
     <div class="style-switcher">
@@ -99,9 +109,7 @@
       <button id="btn-photo" class="style-btn" onclick="switchBaseMap('photo')">🛰️ 航空写真</button>
     </div>
 
-    <div id="status" class="status-text">
-      日本全国対応。現在地ボタンを押すか、地図上の任意の場所をタップしてください（半径1.5km・周辺20橋）。
-    </div>
+    <div id="status" class="status-text"></div>
 
     <div class="legend">
       <span class="badge b-3">● 判定Ⅲ/Ⅳ(要措置)</span>
@@ -115,7 +123,39 @@
 
 <script>
   const WORKER_ENDPOINT = "https://tight-block-116a.morimite2001.workers.dev/";
-  const SEARCH_RADIUS = 1500.0;
+
+  // ===== 施設種別の設定 =====
+  // term         : 国交DPF検索の検索語（DPF:dataset_title に相当）
+  // datasetKeyword: 結果のDPF:dataset_titleにこの語を含むものだけ描画（無ければ素通し）
+  // radius       : 検索半径(m)。トンネル・歩道橋は橋梁より数が少ないため広めにしている
+  const FACILITIES = {
+    bridge: {
+      icon: "🌉", name: "橋梁", unit: "橋", title: "全国 橋梁点検マップ", pageTitle: "全国 橋梁点検マップ（DPF連携）",
+      term: "橋梁", datasetKeyword: null, radius: 1500, size: 20,
+      lenLabel: "橋長", lenKeys: ["kyouchou", "kyoucho"]
+    },
+    tunnel: {
+      icon: "🚇", name: "トンネル", unit: "本", title: "全国 トンネル点検マップ", pageTitle: "全国 トンネル点検マップ（DPF連携）",
+      term: "トンネル", datasetKeyword: "トンネル", radius: 5000, size: 20,
+      lenLabel: "延長", lenKeys: ["enchou", "encho", "kyouchou", "kyoucho"]
+    },
+    deck: {
+      icon: "🚶", name: "横断歩道橋", unit: "橋", title: "全国 歩道橋点検マップ", pageTitle: "全国 歩道橋点検マップ（DPF連携）",
+      term: "横断歩道橋", datasetKeyword: "歩道橋", radius: 3000, size: 20,
+      lenLabel: "橋長", lenKeys: ["kyouchou", "kyoucho", "enchou", "encho"]
+    }
+  };
+
+  let currentType = "bridge";
+  let lastSearch = null;   // 直前に検索した地点（種別を切り替えたとき同じ場所で再検索する）
+  let requestSeq = 0;      // 古い通信結果が新しい表示を上書きしないためのカウンタ
+
+  function radiusText(r) { return r >= 1000 ? (r / 1000) + "km" : r + "m"; }
+  function esc(v) {
+    return String(v === undefined || v === null ? "" : v).replace(/[&<>"']/g, c => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+  }
 
   const map = new maplibregl.Map({
     container: 'map',
@@ -211,10 +251,63 @@
     return {};
   }
 
+  function applyFacilityUI() {
+    const cfg = FACILITIES[currentType];
+    document.getElementById('panel-title-text').textContent = `${cfg.icon} ${cfg.title}`;
+    document.getElementById('gps-label').textContent = `📍 現在地（GPS）から周辺${cfg.size}${cfg.unit}を検索`;
+    document.title = cfg.pageTitle;
+    Object.keys(FACILITIES).forEach(k => {
+      document.getElementById('type-' + k).classList.toggle('active', k === currentType);
+    });
+  }
+
+  function setIdleStatus() {
+    const cfg = FACILITIES[currentType];
+    document.getElementById('status').innerHTML =
+      `日本全国対応。現在地ボタンを押すか、地図上の任意の場所をタップしてください（半径${radiusText(cfg.radius)}・周辺${cfg.size}${cfg.unit}）。`;
+  }
+
+  function clearMarkers() {
+    bridgeMarkers.forEach(m => m.remove());
+    bridgeMarkers = [];
+  }
+
+  // 橋梁 / トンネル / 歩道橋 をワンタップで切り替え
+  function switchFacility(type) {
+    if (!FACILITIES[type] || type === currentType) return;
+    currentType = type;
+    applyFacilityUI();
+    try {
+      history.replaceState(null, '', location.pathname + location.search + (type === 'bridge' ? '' : '#' + type));
+    } catch (e) { /* file:// 等では無視 */ }
+    if (lastSearch) {
+      fetchFacilities(lastSearch.lat, lastSearch.lon, lastSearch.label);   // 同じ場所で再検索
+    } else {
+      clearMarkers();
+      setIdleStatus();
+    }
+  }
+
+  // 値が空でない最初のものを返す
+  function firstDefined(...vals) {
+    for (const v of vals) {
+      if (v !== undefined && v !== null && v !== "") return v;
+    }
+    return undefined;
+  }
+
+  // 平坦化マップから、キー末尾が一致する最初の値を探す（項目名の揺れ対策の最終手段）
+  function findFlat(flat, regex) {
+    for (const [k, v] of Object.entries(flat)) {
+      if (regex.test(k)) return v;
+    }
+    return undefined;
+  }
+
   // RSDB:syogen（諸元）、RSDB:tenken（点検）、RSDB:gyousei_kuiki（行政区域）の入れ子JSONを完全解読する
-  function extractBridgeData(meta) {
+  function extractFacilityData(meta, cfg) {
     if (!meta || typeof meta !== "object") {
-      return { judge: "記録なし", sochi: "記録なし", road: "記録なし", admin: "記録なし", address: "記録なし", year: "記録なし", length: "記録なし", width: "記録なし", inspect: "記録なし", kana: "" };
+      return { judge: "記録なし", sochi: "記録なし", road: "記録なし", admin: "記録なし", address: "記録なし", year: "記録なし", length: "記録なし", width: "記録なし", inspect: "記録なし", kana: "", flat: {} };
     }
 
     // 入れ子になったJSON文字列を解凍
@@ -246,6 +339,7 @@
       meta["RSDB:kiroku_hantei_kubun"] ||
       meta["RSDB:hantei_kubun"] ||
       flat["RSDB:tenken.kiroku.hantei_kubun"] ||
+      findFlat(flat, /RSDB:tenken\..*hantei_kubun$/) ||
       "記録なし";
 
     // 2. 修繕措置状況（tenken.syuzen.sochi_joukyou）
@@ -253,6 +347,7 @@
       (tenken.syuzen && tenken.syuzen.sochi_joukyou) ||
       tenken.sochi_joukyou ||
       flat["RSDB:tenken.syuzen.sochi_joukyou"] ||
+      findFlat(flat, /RSDB:tenken\..*sochi_joukyou$/) ||
       "";
     const sochiMap = {
       "1": "1 (未着手)",
@@ -272,12 +367,23 @@
       "記録なし";
     const inspect = /^\d{4}$/.test(String(rawInspect)) ? `${rawInspect}年度` : String(rawInspect);
 
-    // 4. 橋長（syogen.kyouchou）と 幅員（syogen.fukuin）
-    const rawLen = syogen.kyouchou ?? syogen.kyoucho ?? meta["RSDB:kyoucho"] ?? flat["RSDB:syogen.kyouchou"];
-    const length = (rawLen !== undefined && rawLen !== null && rawLen !== "") ? `${rawLen} m` : "記録なし";
+    // 4. 橋長/延長（syogen.kyouchou / enchou）と 幅員（syogen.fukuin）
+    const lenFromSyogen = firstDefined(...cfg.lenKeys.map(k => syogen[k]));
+    const rawLen = firstDefined(
+      lenFromSyogen,
+      meta["RSDB:kyoucho"],
+      flat["RSDB:syogen.kyouchou"],
+      findFlat(flat, /RSDB:syogen\.(kyouchou|kyoucho|enchou|encho)$/)
+    );
+    const length = rawLen !== undefined ? `${rawLen} m` : "記録なし";
 
-    const rawWid = syogen.fukuin ?? meta["RSDB:fukuin"] ?? flat["RSDB:syogen.fukuin"];
-    const width = (rawWid !== undefined && rawWid !== null && rawWid !== "") ? `${rawWid} m` : "記録なし";
+    const rawWid = firstDefined(
+      syogen.fukuin,
+      meta["RSDB:fukuin"],
+      flat["RSDB:syogen.fukuin"],
+      findFlat(flat, /RSDB:syogen\.fukuin$/)
+    );
+    const width = rawWid !== undefined ? `${rawWid} m` : "記録なし";
 
     // 5. 路線名（syogen.rosen.meisyou または DPF:route_name）
     const road =
@@ -305,11 +411,12 @@
       address = String(meta["DPF:address"]);
     }
 
-    // 8. 架設年（syogen.kasetsu_nendo または DPF:erection_datetime）
+    // 8. 架設年（syogen.kasetsu_nendo または DPF:erection_datetime。トンネルは供用開始年などの揺れも拾う）
     let rawYear =
       syogen.kasetsu_nendo ||
       syogen.kasetsu_nen ||
       meta["DPF:erection_datetime"] ||
+      findFlat(flat, /RSDB:syogen\.(kasetsu|kyouyou|kansei)[a-z_]*(nendo|nen)$/) ||
       "記録なし";
     let year = String(rawYear);
     if (/^\d{4}/.test(year)) {
@@ -340,7 +447,7 @@
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         map.flyTo({ center: [lon, lat], zoom: 15, pitch: 55, essential: true });
-        fetchBridges(lat, lon, "現在地（GPS）");
+        fetchFacilities(lat, lon, "現在地（GPS）");
       },
       () => {
         status.innerHTML = "❌ 現在地の取得に失敗しました。位置情報許可を確認するか、地図上を直接タップしてください。";
@@ -353,40 +460,42 @@
     if (e.originalEvent.target.closest('.bridge-marker') || e.originalEvent.target.closest('.maplibregl-popup')) {
       return;
     }
-    fetchBridges(e.lngLat.lat, e.lngLat.lng, "指定地点");
+    fetchFacilities(e.lngLat.lat, e.lngLat.lng, "指定地点");
   });
 
-  async function fetchBridges(lat, lon, label) {
+  async function fetchFacilities(lat, lon, label) {
+    const cfg = FACILITIES[currentType];
+    const seq = ++requestSeq;
+    lastSearch = { lat, lon, label };
     const status = document.getElementById('status');
 
-    bridgeMarkers.forEach(m => m.remove());
-    bridgeMarkers = [];
+    clearMarkers();
     if (centerMarker) centerMarker.remove();
 
     if (map.getSource('search-circle')) {
-      map.getSource('search-circle').setData(createCircleGeoJSON(lon, lat, SEARCH_RADIUS));
+      map.getSource('search-circle').setData(createCircleGeoJSON(lon, lat, cfg.radius));
     }
 
     centerMarker = new maplibregl.Marker({ color: "#0284c7" })
       .setLngLat([lon, lat])
-      .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`<b>📍 ${label}</b><br>緯度: ${lat.toFixed(5)}<br>経度: ${lon.toFixed(5)}`))
+      .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(`<b>📍 ${esc(label)}</b><br>緯度: ${lat.toFixed(5)}<br>経度: ${lon.toFixed(5)}`))
       .addTo(map);
 
-    status.innerHTML = `🔄 ${label}から半径1.5km以内の橋梁データを取得中...`;
+    status.innerHTML = `🔄 ${esc(label)}から半径${radiusText(cfg.radius)}以内の${cfg.name}データを取得中...`;
 
     const query = `
       query {
         search(
-          term: "橋梁"
+          term: "${cfg.term}"
           locationFilter: {
             geoDistance: {
               lat: ${lat}
               lon: ${lon}
-              distance: ${SEARCH_RADIUS}
+              distance: ${Number(cfg.radius).toFixed(1)}
             }
           }
           first: 0
-          size: 20
+          size: ${cfg.size}
         ) {
           totalNumber
           searchResults {
@@ -410,21 +519,31 @@
       if (!response.ok) throw new Error(`HTTP status ${response.status}`);
 
       const json = await response.json();
+      if (seq !== requestSeq) return;   // 切替・再検索で古くなった結果は捨てる
+
       if (json.errors) {
-        status.innerHTML = "❌ クエリエラー: " + json.errors[0].message;
+        status.innerHTML = "❌ クエリエラー: " + esc(json.errors[0].message);
         return;
       }
 
       const searchData = (json.data && json.data.search) || {};
-      const records = searchData.searchResults || [];
+      const rawRecords = searchData.searchResults || [];
       const total = searchData.totalNumber || 0;
 
+      // 検索語が他のデータセットにも当たる場合に備え、種別が明らかに違うものだけ除外する
+      const records = cfg.datasetKeyword
+        ? rawRecords.filter(r => {
+            const t = r.metadata && r.metadata["DPF:dataset_title"];
+            return !t || String(t).includes(cfg.datasetKeyword);
+          })
+        : rawRecords;
+
       if (records.length === 0) {
-        status.innerHTML = `ℹ️ 周辺1.5km以内に橋梁データは見つかりませんでした。`;
+        status.innerHTML = `ℹ️ 周辺${radiusText(cfg.radius)}以内に${cfg.name}データは見つかりませんでした。地図上の別の場所をタップしてみてください。`;
         return;
       }
 
-      status.innerHTML = `✅ 検索ヒット総数: <b>${total}件</b>（周辺 <b>${records.length}橋</b> を描画）<br>色付きの丸い点をタップすると点検結果を表示します。`;
+      status.innerHTML = `✅ 検索ヒット総数: <b>${total}件</b>（周辺 <b>${records.length}${cfg.unit}</b> を描画）<br>色付きの丸い点をタップすると点検結果を表示します。`;
 
       if (window.innerWidth <= 600) {
         document.getElementById('panel-body').classList.add('collapsed');
@@ -434,7 +553,7 @@
       records.forEach((item) => {
         if (!item.lat || !item.lon) return;
         const meta = item.metadata || {};
-        const info = extractBridgeData(meta);
+        const info = extractFacilityData(meta, cfg);
         const style = getJudgeStyle(info.judge);
 
         // 判定区分（Ⅰ:緑、Ⅱ:オレンジ、Ⅲ:赤、Ⅳ:濃赤）でマーカーを着色
@@ -450,27 +569,27 @@
 
         // 解凍された全データの詳細テーブル
         let detailRows = "";
-        for (const [k, v] of Object.entries(info.flat)) {
+        for (const [k, v] of Object.entries(info.flat || {})) {
           if (k === "DPF:downloadURLs") continue;
-          detailRows += `<tr><th>${k}</th><td>${v}</td></tr>`;
+          detailRows += `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`;
         }
 
-        const kanaHtml = info.kana ? `<span style="font-size:11px; color:#64748b; font-weight:normal; margin-left:6px;">${info.kana}</span>` : "";
+        const kanaHtml = info.kana ? `<span style="font-size:11px; color:#64748b; font-weight:normal; margin-left:6px;">${esc(info.kana)}</span>` : "";
 
         const popupHtml = `
           <div>
             <div class="popup-title" style="border-color:${style.color};">
-              ${item.title || "名称未詳"}${kanaHtml}
+              ${esc(item.title || "名称未詳")}${kanaHtml}
             </div>
             <table class="popup-table">
-              <tr><th>健全性判定(全体)</th><td><b style="color:${style.color}; font-size:13px;">${style.label}</b></td></tr>
-              <tr><th>修繕措置状況</th><td>${info.sochi}</td></tr>
-              <tr><th>路線名</th><td>${info.road}</td></tr>
-              <tr><th>管理者</th><td>${info.admin}</td></tr>
-              <tr><th>所在地</th><td>${info.address}</td></tr>
-              <tr><th>架設年</th><td>${info.year}</td></tr>
-              <tr><th>橋長 / 幅員</th><td><b>${info.length}</b> / <b>${info.width}</b></td></tr>
-              <tr><th>最新点検年度</th><td>${info.inspect}</td></tr>
+              <tr><th>健全性判定(全体)</th><td><b style="color:${style.color}; font-size:13px;">${esc(style.label)}</b></td></tr>
+              <tr><th>修繕措置状況</th><td>${esc(info.sochi)}</td></tr>
+              <tr><th>路線名</th><td>${esc(info.road)}</td></tr>
+              <tr><th>管理者</th><td>${esc(info.admin)}</td></tr>
+              <tr><th>所在地</th><td>${esc(info.address)}</td></tr>
+              <tr><th>架設年</th><td>${esc(info.year)}</td></tr>
+              <tr><th>${cfg.lenLabel} / 幅員</th><td><b>${esc(info.length)}</b> / <b>${esc(info.width)}</b></td></tr>
+              <tr><th>最新点検年度</th><td>${esc(info.inspect)}</td></tr>
               <tr><th>位置座標</th><td>${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</td></tr>
             </table>
             <details style="margin-top:8px; font-size:11px;">
@@ -493,10 +612,19 @@
       });
 
     } catch (err) {
-      status.innerHTML = "❌ 通信エラーが発生しました: " + err.message;
+      if (seq !== requestSeq) return;
+      status.innerHTML = "❌ 通信エラーが発生しました: " + esc(err.message);
       console.error(err);
     }
   }
+
+  // 起動時: URLハッシュ(#tunnel / #deck)で種別を指定できる
+  (function initFacility() {
+    const h = (location.hash || "").replace("#", "");
+    if (FACILITIES[h]) currentType = h;
+    applyFacilityUI();
+    setIdleStatus();
+  })();
 </script>
 </body>
 </html>
