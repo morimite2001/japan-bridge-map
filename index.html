@@ -304,41 +304,10 @@
     return undefined;
   }
 
-  // DPFメタデータ内のダウンロード先URLを集める
-  // (DPF:downloadURLs は文字列・配列・JSON文字列のどれでも対応。他の項目に入っているURLも「その他」として拾う)
-  function collectDownloadUrls(meta, flat) {
-    const urlRe = /https?:\/\/[^\s"'<>\\\]\[{},]+/g;
-    const raw = meta["DPF:downloadURLs"];
-    const main = [];
-    if (raw !== undefined && raw !== null && raw !== "") {
-      const text = typeof raw === "string" ? raw : JSON.stringify(raw);
-      (text.match(urlRe) || []).forEach(u => { if (!main.includes(u)) main.push(u); });
-    }
-    const others = [];
-    for (const [k, v] of Object.entries(flat || {})) {
-      if (k.startsWith("DPF:downloadURLs")) continue;
-      (String(v).match(urlRe) || []).forEach(u => {
-        if (!main.includes(u) && !others.some(o => o.url === u)) others.push({ key: k, url: u });
-      });
-    }
-    return { raw, main, others };
-  }
-
-  function urlLabel(u) {
-    try {
-      const last = decodeURIComponent(new URL(u).pathname.split("/").filter(Boolean).pop() || "");
-      return last || u;
-    } catch (e) { return u; }
-  }
-
-  function linkHtml(u) {
-    return `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer" style="color:#0284c7; word-break:break-all;">📄 ${esc(urlLabel(u))}</a>`;
-  }
-
   // RSDB:syogen（諸元）、RSDB:tenken（点検）、RSDB:gyousei_kuiki（行政区域）の入れ子JSONを完全解読する
   function extractFacilityData(meta, cfg) {
     if (!meta || typeof meta !== "object") {
-      return { judge: "記録なし", sochi: "記録なし", road: "記録なし", admin: "記録なし", address: "記録なし", year: "記録なし", length: "記録なし", width: "記録なし", inspect: "記録なし", kana: "", flat: {}, downloads: { raw: undefined, main: [], others: [] } };
+      return { judge: "記録なし", sochi: "記録なし", road: "記録なし", admin: "記録なし", address: "記録なし", year: "記録なし", length: "記録なし", width: "記録なし", inspect: "記録なし", kana: "", flat: {} };
     }
 
     // 入れ子になったJSON文字列を解凍
@@ -463,7 +432,7 @@
       meta["DPF:title_furigana"] ||
       "";
 
-    return { judge: String(judge), sochi, road, admin, address, year, length, width, inspect, kana, flat, downloads: collectDownloadUrls(meta, flat) };
+    return { judge: String(judge), sochi, road, admin, address, year, length, width, inspect, kana, flat };
   }
 
   function searchByGPS() {
@@ -601,22 +570,8 @@
         // 解凍された全データの詳細テーブル
         let detailRows = "";
         for (const [k, v] of Object.entries(info.flat || {})) {
+          if (k === "DPF:downloadURLs") continue;
           detailRows += `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`;
-        }
-
-        // ダウンロード先URL（DPF:downloadURLs）。中身の確認用に、見つからない場合も明示する
-        const dl = info.downloads;
-        let dlHtml;
-        if (dl.main.length > 0) {
-          dlHtml = dl.main.map(linkHtml).join("<br>");
-        } else if (dl.raw !== undefined && dl.raw !== null && dl.raw !== "") {
-          dlHtml = `<span style="color:#b45309;">URLを抽出できませんでした。値:</span><br><code style="font-size:10px; word-break:break-all;">${esc(typeof dl.raw === "string" ? dl.raw : JSON.stringify(dl.raw))}</code>`;
-        } else {
-          dlHtml = `<span style="color:#64748b;">項目なし</span>`;
-        }
-        if (dl.others.length > 0) {
-          dlHtml += `<div style="margin-top:6px; font-size:10px; color:#64748b;">その他のURL:</div>` +
-            dl.others.map(o => `<div>${linkHtml(o.url)}<div style="font-size:10px; color:#94a3b8;">${esc(o.key)}</div></div>`).join("");
         }
 
         const kanaHtml = info.kana ? `<span style="font-size:11px; color:#64748b; font-weight:normal; margin-left:6px;">${esc(info.kana)}</span>` : "";
@@ -636,7 +591,6 @@
               <tr><th>${cfg.lenLabel} / 幅員</th><td><b>${esc(info.length)}</b> / <b>${esc(info.width)}</b></td></tr>
               <tr><th>最新点検年度</th><td>${esc(info.inspect)}</td></tr>
               <tr><th>位置座標</th><td>${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</td></tr>
-              <tr><th>ダウンロード先<br><span style="font-weight:normal; font-size:10px;">(DPF:downloadURLs)</span></th><td>${dlHtml}</td></tr>
             </table>
             <details style="margin-top:8px; font-size:11px;">
               <summary style="cursor:pointer; color:#0284c7; font-weight:bold;">📋 解読済み全データ項目を見る</summary>
